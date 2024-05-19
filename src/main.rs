@@ -1,9 +1,11 @@
 mod commands;
+mod config;
 mod event_handlers;
 mod types;
 
 use commands::server;
 
+use config::Config;
 use event_handlers::Handler;
 use pterodactyl_api::client as ptero_client;
 use serenity::all::{ClientBuilder, GatewayIntents, GuildId};
@@ -16,6 +18,9 @@ async fn main() {
   let discord_guild_id = env::var("DISCORD_GUILD_ID").expect("missing DISCORD_GUILD_ID");
   let pterodactyl_url = env::var("PTERODACTYL_URL").expect("missing PTERODACTYL_URL");
   let pterodactyl_client_api_key = env::var("PTERODACTYL_CLIENT_API_KEY").expect("missing PTERODACTYL_CLIENT_API_KEY");
+
+  // Config file
+  let config = Config::load();
 
   // Pterodactyl
 
@@ -39,7 +44,7 @@ async fn main() {
         )
         .await?;
 
-        Ok(Data { ptero_client })
+        Ok(Data { ptero_client, config })
       })
     })
     .build();
