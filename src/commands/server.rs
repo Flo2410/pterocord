@@ -1,10 +1,13 @@
 use poise::CreateReply;
-use serenity::all::{Colour, CreateEmbed};
+use serenity::all::{ChannelId, Colour, CreateEmbed};
 
-use crate::types::{Context, Error};
+use crate::{
+  config::ServersConfig,
+  types::{Context, Error},
+};
 
 /// Manage servers for the bot.
-#[poise::command(slash_command, subcommands("list"))]
+#[poise::command(slash_command, subcommands("list", "add"))]
 pub async fn server(_ctx: Context<'_>, _arg: String) -> Result<(), Error> {
   Ok(())
 }
@@ -52,6 +55,39 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
   let reply = CreateReply::default().embed(embed);
 
   ctx.send(reply).await?;
+
+  Ok(())
+}
+
+#[poise::command(slash_command)]
+pub async fn add(
+  ctx: Context<'_>,
+  #[description = "The server id optained from /server list"] server_id: String,
+  #[description = "The channel id the server will be connected to"] channel_id: String,
+  #[description = "The channel name"] channel_name: String,
+) -> Result<(), Error> {
+  let client = &ctx.data().ptero_client;
+
+  let server = client.get_server(server_id);
+  let server_struct = server.get_details().await?;
+
+  let channel = ChannelId::new(channel_id.parse()?).to_channel(ctx).await?;
+
+  let server_config = ServersConfig {
+    ptero_server_id: server_struct.identifier,
+    discord_channel_id: channel.id().to_string(),
+    discord_channle_name: channel_name,
+  };
+
+  // TODO: write to config
+
+  ctx
+    .reply(format!(
+      "Added server **{}** to {}",
+      server_struct.name,
+      channel.to_string()
+    ))
+    .await?;
 
   Ok(())
 }
