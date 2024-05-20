@@ -2,6 +2,7 @@ use crate::{
   server::{Server, ServerActionButton},
   types::{Data, Error},
 };
+use pterodactyl_api::client::PowerSignal;
 use serenity::all::{ChannelId, Context, CreateInteractionResponse, FullEvent};
 use std::str::FromStr;
 
@@ -40,10 +41,13 @@ pub async fn event_handler(
       );
 
       match custom_id {
-        ServerActionButton::Start => server.start(&ctx).await?,
-        _ => {}
+        ServerActionButton::Start => server.send_power_signal(PowerSignal::Start).await?,
+        ServerActionButton::Stop => server.send_power_signal(PowerSignal::Stop).await?,
+        ServerActionButton::Restart => server.send_power_signal(PowerSignal::Restart).await?,
+        ServerActionButton::Kill => server.send_power_signal(PowerSignal::Kill).await?,
       };
 
+      println!("Responde");
       component
         .create_response(&ctx, CreateInteractionResponse::Acknowledge)
         .await?;

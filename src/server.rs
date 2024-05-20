@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::{Ok, Result};
 use pterodactyl_api::client::{Client, PowerSignal, ServerState};
 use serenity::all::Message;
@@ -7,6 +5,7 @@ use serenity::all::{
   ButtonStyle, CacheHttp, ChannelId, Color, CreateActionRow, CreateButton, CreateEmbed, CreateMessage, EditChannel,
   EditMessage, GetMessages,
 };
+use std::sync::Arc;
 use strum_macros::{Display, EnumString};
 use tokio::sync::RwLock;
 
@@ -58,6 +57,8 @@ impl Server {
     if !msgs.is_empty() {
       channel.delete_messages(&cache_http.http(), msgs).await?;
       println!("cleared the channel");
+    } else {
+      println!("no messages to clear");
     }
 
     // Set name
@@ -107,8 +108,8 @@ impl Server {
     // Get infos from Pterodactyl
     let ptero_server_lock = self.ptero_client.read().await;
     let ptero_server = ptero_server_lock.get_server(&self.config.read().await.ptero_server_id);
-    let server_struct = &ptero_server.get_details().await?;
-    let server_resources = &ptero_server.get_resources().await?;
+    let server_struct = ptero_server.get_details().await?;
+    let server_resources = ptero_server.get_resources().await?;
 
     let server_desc_default = server_struct.description.clone().unwrap_or_default();
     let server_desc = if server_desc_default.is_empty() {
@@ -136,27 +137,36 @@ impl Server {
         .label("Start Server")
         .style(ButtonStyle::Success)],
 
-      ServerState::Running => vec![
+      ServerState::Running | ServerState::Starting => vec![
         CreateButton::new(ServerActionButton::Stop.to_string())
           .label("Stop Server")
           .style(ButtonStyle::Danger),
         CreateButton::new(ServerActionButton::Restart.to_string())
           .label("Restart Server")
-          .style(ButtonStyle::Secondary),
+          .style(ButtonStyle::Primary),
+        CreateButton::new(ServerActionButton::Kill.to_string())
+          .label("Kill Server")
+          .style(ButtonStyle::Danger),
       ],
-      _ => vec![],
+
+      ServerState::Stopping => vec![CreateButton::new(ServerActionButton::Kill.to_string())
+        .label("Kill Server")
+        .style(ButtonStyle::Danger)],
     })];
 
     Ok((embed, buttons))
   }
 
-  pub async fn start(&self, cache_http: impl CacheHttp) -> Result<()> {
+  pub async fn send_power_signal(&self, signal: PowerSignal) -> Result<()> {
     let ptero_server_lock = self.ptero_client.read().await;
     let ptero_server = ptero_server_lock.get_server(&self.config.read().await.ptero_server_id);
-    ptero_server.send_power_signal(PowerSignal::Start).await?;
-    self.update_msg(cache_http).await?;
+    ptero_server.send_power_signal(signal).await?;
 
-    println!("Starting server {}", ptero_server.get_details().await?.name);
+    println!(
+      "{} server {}",
+      signal.to_string(),
+      ptero_server.get_details().await?.name
+    );
 
     Ok(())
   }
