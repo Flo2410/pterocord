@@ -1,10 +1,7 @@
 use poise::CreateReply;
 use serenity::all::{ChannelId, Colour, CreateEmbed};
 
-use crate::{
-  config::ServersConfig,
-  types::{Context, Error},
-};
+use crate::types::{Context, Error};
 
 /// Manage servers for the bot.
 #[poise::command(slash_command, subcommands("list", "add"))]
@@ -17,12 +14,14 @@ pub async fn server(_ctx: Context<'_>, _arg: String) -> Result<(), Error> {
 pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
   let client = &ctx.data().ptero_client;
 
-  let servers = client.list_servers().await?;
+  let servers = client.read().await.list_servers().await?;
 
   let mut fields: Vec<(String, String, bool)> = vec![];
 
   for server_struct in servers.iter() {
     let server_resources = client
+      .read()
+      .await
       .get_server(&server_struct.identifier)
       .get_resources()
       .await
@@ -52,7 +51,7 @@ pub async fn list(ctx: Context<'_>) -> Result<(), Error> {
     .color(Colour::new(0x0000BB))
     .fields(fields);
 
-  let reply = CreateReply::default().embed(embed);
+  let reply: CreateReply = CreateReply::default().embed(embed);
 
   ctx.send(reply).await?;
 
@@ -68,26 +67,26 @@ pub async fn add(
 ) -> Result<(), Error> {
   let client = &ctx.data().ptero_client;
 
-  let server = client.get_server(server_id);
-  let server_struct = server.get_details().await?;
+  // let server = client.read().await.get_server(server_id);
+  // let server_struct = server.get_details().await?;
 
   let channel = ChannelId::new(channel_id.parse()?).to_channel(ctx).await?;
 
-  let server_config = ServersConfig {
-    ptero_server_id: server_struct.identifier,
-    discord_channel_id: channel.id().to_string(),
-    discord_channle_name: channel_name,
-  };
+  // let server_config = ServersConfig {
+  //   ptero_server_id: server_struct.identifier,
+  //   discord_channel_id: channel.id().to_string(),
+  //   discord_channle_name: channel_name,
+  // };
 
   // TODO: write to config
 
-  ctx
-    .reply(format!(
-      "Added server **{}** to {}",
-      server_struct.name,
-      channel.to_string()
-    ))
-    .await?;
+  // ctx
+  //   .reply(format!(
+  //     "Added server **{}** to {}",
+  //     server_struct.name,
+  //     channel.to_string()
+  //   ))
+  //   .await?;
 
   Ok(())
 }

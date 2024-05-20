@@ -1,23 +1,20 @@
+use anyhow::{Ok, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
 use std::{
   fs::{File, OpenOptions},
   io::BufReader,
   path::Path,
 };
 
+use crate::server_config::ServerConfig;
+
 const CONFIG_FILE_PATH: &str = "./config.json";
 
 #[derive(Serialize, Deserialize)]
-pub struct ServersConfig {
-  pub ptero_server_id: String,
-  pub discord_channel_id: String,
-  pub discord_channle_name: String,
-}
-
-#[derive(Serialize, Deserialize)]
 pub struct Config {
-  pub servers: Vec<ServersConfig>,
+  pub servers: Vec<ServerConfig>,
 }
 
 impl Config {
@@ -28,12 +25,13 @@ impl Config {
     config
   }
 
-  pub fn add_server(&mut self, server_config: ServersConfig) {
+  pub fn add_server(&mut self, server_config: ServerConfig) -> Result<()> {
     self.servers.push(server_config);
-    self.save();
+    self.save()?;
+    Ok(())
   }
 
-  fn save(&self) -> anyhow::Result<()> {
+  fn save(&self) -> Result<()> {
     serde_json::to_writer_pretty(
       OpenOptions::new()
         .write(true)

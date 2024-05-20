@@ -1,11 +1,14 @@
-use pterodactyl_api::client::Client;
+use std::sync::Arc;
 
-use crate::config::Config;
+use pterodactyl_api::client::Client;
+use tokio::sync::RwLock;
+
+use crate::server::Server;
 
 // User data, which is stored and accessible in all command invocations
 pub struct Data {
-  pub ptero_client: Client,
-  pub config: Config,
+  pub servers: Arc<RwLock<Vec<Server>>>,
+  pub ptero_client: Arc<RwLock<Client>>,
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
