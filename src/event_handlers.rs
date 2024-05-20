@@ -3,7 +3,7 @@ use crate::{
   types::{Data, Error},
 };
 use pterodactyl_api::client::PowerSignal;
-use serenity::all::{ChannelId, Context, CreateInteractionResponse, FullEvent};
+use serenity::all::{Context, CreateInteractionResponse, FullEvent};
 use std::str::FromStr;
 
 pub async fn event_handler(
@@ -17,9 +17,8 @@ pub async fn event_handler(
       println!("Logged in as {}", data_about_bot.user.name);
 
       for server in data.servers.read().await.iter() {
-        let channel = ChannelId::new(server.config.read().await.discord_channel_id.parse()?);
         println!("calling init");
-        server.init(&ctx, &channel).await?;
+        server.init(&ctx).await?;
       }
     }
 

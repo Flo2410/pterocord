@@ -51,7 +51,9 @@ impl Server {
     )))
   }
 
-  pub async fn init(&self, cache_http: impl CacheHttp, channel: &ChannelId) -> Result<()> {
+  pub async fn init(&self, cache_http: impl CacheHttp) -> Result<()> {
+    let channel = ChannelId::new(self.config.read().await.discord_channel_id.parse()?);
+
     // Clear channel
     let msgs = channel.messages(&cache_http, GetMessages::default()).await?;
     if !msgs.is_empty() {
@@ -73,6 +75,18 @@ impl Server {
     let mut dc_msg = self.discord_msg.write().await;
     *dc_msg = channel.send_message(cache_http, new_msg).await?;
     println!("sent new msg");
+
+    Ok(())
+  }
+
+  pub async fn update_channel(&self, cache_http: impl CacheHttp) -> Result<()> {
+    let channel = ChannelId::new(self.config.read().await.discord_channel_id.parse()?);
+    let channel_name = &self.config.read().await.discord_channle_name;
+    let edit_channel = self.build_channel().await?;
+
+    channel.edit(cache_http, edit_channel).await?;
+
+    println!("Updated channel {}", channel_name);
 
     Ok(())
   }

@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
     loop {
       for server in servers.read().await.iter() {
         let _ = server.update_msg(&http).await;
+        let _ = server.update_channel(&http).await;
       }
 
       sleep(Duration::from_secs(10)).await;
