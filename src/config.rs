@@ -21,7 +21,7 @@ impl Config {
   pub fn load() -> Self {
     let file_path = Path::new(CONFIG_FILE_PATH);
     let file = open_json_file(&file_path);
-    let config: Config = serde_json::from_reader(BufReader::new(&file)).expect("Could not parse manifest");
+    let config: Config = serde_json::from_reader(BufReader::new(&file)).expect("Could not parse config");
     config
   }
 
