@@ -18,11 +18,11 @@ pub async fn event_handler(
       info!("Logged in as '{}'", data_about_bot.user.name);
 
       for server_arc in data.servers.iter() {
-        debug!(
-          "Calling init for '{}'",
-          server_arc.read().await.config.read().await.discord_channle_name
-        );
-        server_arc.read().await.init(&ctx).await?;
+        let server = server_arc.read().await;
+        let channel_name = &server.config.read().await.discord_channle_name;
+
+        debug!("Calling init for '{}'", channel_name);
+        server.init(&ctx).await?;
       }
     }
 

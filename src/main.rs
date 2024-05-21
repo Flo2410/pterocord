@@ -10,7 +10,7 @@ use anyhow::Result;
 use commands::server;
 use config::Config;
 use event_handlers::event_handler;
-use log::info;
+use log::{debug, info};
 use pterodactyl_api::client as ptero_client;
 use serenity::all::{ClientBuilder, GatewayIntents, GuildId};
 use std::{env, str::FromStr, sync::Arc};
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
   let pterodactyl_client_api_key = env::var("PTERODACTYL_CLIENT_API_KEY").expect("missing PTERODACTYL_CLIENT_API_KEY");
 
   env_logger::init();
-  info!("Logger initialized");
+  info!("Logger initialized with level '{}'", log::max_level());
 
   // Config file
   let config = Config::load();
@@ -41,6 +41,7 @@ async fn main() -> Result<()> {
   );
 
   // Server
+  debug!("Creating pterocord::Server structs");
   let servers = config
     .servers
     .iter()
@@ -53,6 +54,7 @@ async fn main() -> Result<()> {
     .collect::<Vec<_>>();
 
   // Discord
+  debug!("Creating Serenity framework");
   let intents = GatewayIntents::GUILDS;
   let servers_clone = servers.clone();
   let framework = poise::Framework::builder()
@@ -78,11 +80,13 @@ async fn main() -> Result<()> {
     })
     .build();
 
+  debug!("Creating Serenity client");
   let mut client = ClientBuilder::new(discord_api_token, intents)
     .framework(framework)
     .await?;
 
   // Start the websocket client for all servers
+  debug!("Starting WebSocket clients");
   for server_arc in servers.iter() {
     server_arc
       .read()
@@ -92,6 +96,7 @@ async fn main() -> Result<()> {
   }
 
   // Start discord client
+  debug!("Starting Serenity client");
   client.start().await.unwrap();
 
   Ok(())
