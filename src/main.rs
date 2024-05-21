@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
   // Discord
   debug!("Creating Serenity framework");
-  let intents = GatewayIntents::GUILDS;
+  let intents = GatewayIntents::GUILD_MESSAGES;
   let servers_clone = servers.clone();
   let framework = poise::Framework::builder()
     .setup(|ctx, _ready, framework| {
