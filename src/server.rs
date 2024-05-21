@@ -64,9 +64,9 @@ impl Server {
     }
 
     // Set name
-    let new_channel_name = self.build_channel().await?;
-    channel.edit(&cache_http, new_channel_name).await?;
-    println!("updated the name");
+    // let new_channel_name = self.build_channel().await?;
+    // channel.edit(&cache_http.http(), new_channel_name).await?;
+    // println!("updated the name");
 
     let (embed, buttons) = self.build_msg().await?;
 
