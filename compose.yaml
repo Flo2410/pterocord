@@ -1,0 +1,10 @@
+services:
+  pterocord:
+    image: ghcr.io/flo2410/pterocord:latest
+    build: .
+    environment:
+      RUST_LOG: "pterocord=debug"
+    env_file:
+      - .env
+    volumes:
+      - ./config.json:/app/config.json
