@@ -2,6 +2,7 @@ use crate::{
   server::{Server, ServerActionButton},
   types::{Data, Error},
 };
+use log::{debug, info};
 use pterodactyl_api::client::PowerSignal;
 use serenity::all::{Context, CreateInteractionResponse, FullEvent};
 use std::str::FromStr;
@@ -14,16 +15,22 @@ pub async fn event_handler(
 ) -> Result<(), Error> {
   match event {
     FullEvent::Ready { data_about_bot, .. } => {
-      println!("Logged in as {}", data_about_bot.user.name);
+      info!("Logged in as '{}'", data_about_bot.user.name);
 
       for server_arc in data.servers.iter() {
-        println!("calling init");
+        debug!(
+          "Calling init for '{}'",
+          server_arc.read().await.config.read().await.discord_channle_name
+        );
         server_arc.read().await.init(&ctx).await?;
       }
     }
 
     FullEvent::ReactionAdd { add_reaction } => {
-      println!("Added reaction {} in {}", add_reaction.emoji, add_reaction.channel_id);
+      debug!(
+        "Added reaction '{}' in '{}'",
+        add_reaction.emoji, add_reaction.channel_id
+      );
     }
 
     FullEvent::InteractionCreate { interaction } => {
@@ -35,11 +42,8 @@ pub async fn event_handler(
         .read()
         .await;
 
-      println!(
-        "Button '{}' was pressed for '{}'",
-        custom_id,
-        server.config.read().await.discord_channle_name
-      );
+      let channel_name = &server.config.read().await.discord_channle_name;
+      info!("Button '{}' was pressed for '{}'", custom_id, channel_name);
 
       match custom_id {
         ServerActionButton::Start => server.send_power_signal(PowerSignal::Start).await?,
@@ -48,7 +52,7 @@ pub async fn event_handler(
         ServerActionButton::Kill => server.send_power_signal(PowerSignal::Kill).await?,
       };
 
-      println!("Responde");
+      debug!("Respond to button press '{}' for '{}'", custom_id, channel_name);
       component
         .create_response(&ctx, CreateInteractionResponse::Acknowledge)
         .await?;

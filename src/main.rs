@@ -10,6 +10,7 @@ use anyhow::Result;
 use commands::server;
 use config::Config;
 use event_handlers::event_handler;
+use log::info;
 use pterodactyl_api::client as ptero_client;
 use serenity::all::{ClientBuilder, GatewayIntents, GuildId};
 use std::{env, str::FromStr, sync::Arc};
@@ -23,6 +24,9 @@ async fn main() -> Result<()> {
   let pterodactyl_url = env::var("PTERODACTYL_URL").expect("missing PTERODACTYL_URL");
   let pterodactyl_client_api_key = env::var("PTERODACTYL_CLIENT_API_KEY").expect("missing PTERODACTYL_CLIENT_API_KEY");
 
+  env_logger::init();
+  info!("Logger initialized");
+
   // Config file
   let config = Config::load();
 
@@ -31,8 +35,8 @@ async fn main() -> Result<()> {
     ptero_client::ClientBuilder::new(pterodactyl_url, pterodactyl_client_api_key).build(),
   ));
 
-  println!(
-    "Pterodactyl connected as {}",
+  info!(
+    "Pterodactyl connected as '{}'",
     ptero_client.read().await.get_account_details().await?.username
   );
 

@@ -4,6 +4,7 @@ use async_tungstenite::tungstenite::client::IntoClientRequest;
 use async_tungstenite::tungstenite::http::header::ORIGIN;
 use async_tungstenite::tungstenite::http::HeaderValue;
 use local_ip_address::local_ip;
+use log::{debug, info};
 use pterodactyl_api::client::websocket::{PteroWebSocketHandle, PteroWebSocketListener, ServerStats};
 use pterodactyl_api::client::{Client, PowerSignal, ServerState};
 use serenity::all::{
@@ -63,20 +64,20 @@ impl Server {
 
   pub async fn init(&self, cache_http: impl CacheHttp) -> Result<()> {
     let channel = ChannelId::new(self.config.read().await.discord_channel_id.parse()?);
-
+    let channel_name = &self.config.read().await.discord_channle_name;
     // Clear channel
     let msgs = channel.messages(&cache_http, GetMessages::default()).await?;
     if !msgs.is_empty() {
       channel.delete_messages(&cache_http.http(), msgs).await?;
-      println!("cleared the channel");
+      debug!("Cleared the channel '{}'", channel_name);
     } else {
-      println!("no messages to clear");
+      debug!("No messages to clear in '{}'", channel_name);
     }
 
     // Set name
     // let new_channel_name = self.build_channel().await?;
     // channel.edit(&cache_http.http(), new_channel_name).await?;
-    // println!("updated the name");
+    // debug!("Updated the name for '{}'", channel_name);
 
     let (embed, buttons) = self.build_msg().await?;
 
@@ -84,7 +85,7 @@ impl Server {
 
     let mut dc_msg = self.discord_msg.write().await;
     *dc_msg = channel.send_message(cache_http, new_msg).await?;
-    println!("sent new msg");
+    debug!("Sent new message to '{}'", channel_name);
 
     Ok(())
   }
@@ -99,12 +100,12 @@ impl Server {
     }
 
     let a = channel.edit(cache_http.http(), edit_channel);
-    println!("Sent channel update");
+    debug!("Sent channel update for '{}'", channel_name);
     let res = a.await;
     if res.is_ok() {
-      println!("Updated channel {}", channel_name);
+      debug!("Updated channel '{}'", channel_name);
     } else {
-      println!("Error updating channel {}", channel_name);
+      debug!("Error updating channel '{}'", channel_name);
     }
 
     Ok(())
@@ -117,8 +118,8 @@ impl Server {
     let edit_msg = EditMessage::new().embed(embed).components(buttons);
     (*msg).edit(cache_http, edit_msg).await?;
 
-    println!(
-      "Updated message in channel {}",
+    debug!(
+      "Updated message in channel '{}'",
       self.config.read().await.discord_channle_name
     );
 
@@ -185,8 +186,8 @@ impl Server {
     let ptero_server = ptero_server_lock.get_server(&self.config.read().await.ptero_server_id);
     ptero_server.send_power_signal(signal).await?;
 
-    println!(
-      "{} server {}",
+    debug!(
+      "Sent power signal '{}' to server '{}'",
       signal.to_string(),
       ptero_server.get_details().await?.name
     );
@@ -202,7 +203,7 @@ impl Server {
     tokio::spawn(async move {
       let ptero_client = ptero_client.read().await;
       let ptero_server = ptero_client.get_server(&config.read().await.ptero_server_id);
-      println!(
+      info!(
         "Staring websocket client for server '{}'",
         config.read().await.discord_channle_name
       );
@@ -252,13 +253,16 @@ struct WebsocketListener {
 
 #[async_trait]
 impl<H: PteroWebSocketHandle> PteroWebSocketListener<H> for WebsocketListener {
-  async fn on_ready(&mut self, handle: &mut H) -> pterodactyl_api::Result<()> {
-    println!("WebSocket is ready.");
+  async fn on_ready(&mut self, _handle: &mut H) -> pterodactyl_api::Result<()> {
+    info!(
+      "WebSocket is ready for '{}'",
+      self.server_arc.read().await.config.read().await.discord_channle_name
+    );
     pterodactyl_api::Result::Ok(())
   }
 
-  async fn on_status(&mut self, handle: &mut H, status: ServerState) -> pterodactyl_api::Result<()> {
-    println!(
+  async fn on_status(&mut self, _handle: &mut H, status: ServerState) -> pterodactyl_api::Result<()> {
+    info!(
       "Received status for '{}': {:?}",
       self.server_arc.read().await.config.read().await.discord_channle_name,
       status
@@ -269,13 +273,13 @@ impl<H: PteroWebSocketHandle> PteroWebSocketListener<H> for WebsocketListener {
     pterodactyl_api::Result::Ok(())
   }
 
-  async fn on_console_output(&mut self, handle: &mut H, output: &str) -> pterodactyl_api::Result<()> {
-    // println!("Console output: {}", output);
+  async fn on_console_output(&mut self, _handle: &mut H, _output: &str) -> pterodactyl_api::Result<()> {
+    // debug!("Console output for {}: {}", self.server_arc.read().await.config.read().await.discord_channle_name, output);
     pterodactyl_api::Result::Ok(())
   }
 
-  async fn on_stats(&mut self, handle: &mut H, stats: ServerStats) -> pterodactyl_api::Result<()> {
-    // println!("Received stats: {:?}", stats);
+  async fn on_stats(&mut self, _handle: &mut H, _stats: ServerStats) -> pterodactyl_api::Result<()> {
+    // debug!("Received stats for {}: {:?}", self.server_arc.read().await.config.read().await.discord_channle_name, stats);
     pterodactyl_api::Result::Ok(())
   }
 }
