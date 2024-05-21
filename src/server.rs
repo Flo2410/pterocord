@@ -4,7 +4,7 @@ use async_tungstenite::tungstenite::client::IntoClientRequest;
 use async_tungstenite::tungstenite::http::header::ORIGIN;
 use async_tungstenite::tungstenite::http::HeaderValue;
 use local_ip_address::local_ip;
-use log::{debug, info};
+use log::{debug, info, warn};
 use pterodactyl_api::client::websocket::{PteroWebSocketHandle, PteroWebSocketListener, ServerStats};
 use pterodactyl_api::client::{Client, PowerSignal, ServerState};
 use serenity::all::{
@@ -13,6 +13,7 @@ use serenity::all::{
 };
 use serenity::all::{Http, Message};
 use serenity::async_trait;
+use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
 use strum_macros::{Display, EnumString};
@@ -203,15 +204,26 @@ impl Server {
     tokio::spawn(async move {
       let ptero_client = ptero_client.read().await;
       let ptero_server = ptero_client.get_server(&config.read().await.ptero_server_id);
-      info!(
-        "Staring websocket client for server '{}'",
-        config.read().await.discord_channle_name
-      );
+      let channel_name = &config.read().await.discord_channle_name;
+
+      info!("Staring websocket client for server '{}'", channel_name);
+
+      let ws_origin_env = env::var("PTERODACTYL_WS_ORIGIN").unwrap_or(String::new());
+      let ws_origin: String;
+
+      if !ws_origin_env.is_empty() {
+        ws_origin = ws_origin_env;
+      } else {
+        let local_ip = local_ip().expect("Failed to get local IP address").to_string();
+        ws_origin = local_ip;
+        warn!("ENV 'PTERODACTYL_WS_ORIGIN' not set, using local IP");
+      }
+
+      debug!("Setting Origing for '{}' to '{}'", channel_name, ws_origin);
+
       let _ = ptero_server
         .run_websocket_loop(
           |url| async move {
-            let local_ip = local_ip().expect("Failed to get local IP address").to_string();
-
             // Convert the URL into a request
             let mut request = Url::from_str(url.as_str())
               .unwrap()
@@ -219,7 +231,7 @@ impl Server {
               .expect("Failed to create request");
 
             // Add the custom "Origin" header
-            request.headers_mut().insert(ORIGIN, HeaderValue::from_str(&local_ip)?);
+            request.headers_mut().insert(ORIGIN, HeaderValue::from_str(&ws_origin)?);
 
             Ok(async_tungstenite::tokio::connect_async(request).await?.0)
           },
