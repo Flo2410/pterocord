@@ -5,17 +5,16 @@ mod server;
 mod server_config;
 mod types;
 
+use crate::server::Server;
 use anyhow::Result;
 use commands::server;
 use config::Config;
 use event_handlers::event_handler;
 use pterodactyl_api::client as ptero_client;
 use serenity::all::{ClientBuilder, GatewayIntents, GuildId};
-use std::{env, str::FromStr, sync::Arc, time::Duration};
-use tokio::{sync::RwLock, time::sleep};
+use std::{env, str::FromStr, sync::Arc};
+use tokio::sync::RwLock;
 use types::Data;
-
-use crate::server::Server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,16 +37,19 @@ async fn main() -> Result<()> {
   );
 
   // Server
-  let servers = Arc::new(RwLock::new(
-    config
-      .servers
-      .iter()
-      .map(|server| Server::new(Arc::new(RwLock::new(server.clone())), ptero_client.clone()))
-      .collect(),
-  ));
+  let servers = config
+    .servers
+    .iter()
+    .map(|server_config| {
+      Arc::new(RwLock::new(Server::new(
+        Arc::new(RwLock::new(server_config.clone())),
+        ptero_client.clone(),
+      )))
+    })
+    .collect::<Vec<_>>();
 
   // Discord
-  let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::GUILD_MESSAGE_REACTIONS;
+  let intents = GatewayIntents::GUILDS;
   let servers_clone = servers.clone();
   let framework = poise::Framework::builder()
     .setup(|ctx, _ready, framework| {
@@ -76,23 +78,17 @@ async fn main() -> Result<()> {
     .framework(framework)
     .await?;
 
-  // Start update loop
-  let http = client.http.clone();
-  let task = tokio::spawn(async move {
-    loop {
-      for server in servers.read().await.iter() {
-        let _ = server.update_msg(&http).await;
-        let _ = server.update_channel(&http).await;
-      }
-
-      sleep(Duration::from_secs(10)).await;
-    }
-  });
+  // Start the websocket client for all servers
+  for server_arc in servers.iter() {
+    server_arc
+      .read()
+      .await
+      .start_websocket_client(server_arc.clone(), client.http.clone())
+      .await;
+  }
 
   // Start discord client
   client.start().await.unwrap();
-
-  task.abort();
 
   Ok(())
 }

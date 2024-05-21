@@ -7,7 +7,7 @@ use crate::server::Server;
 
 // User data, which is stored and accessible in all command invocations
 pub struct Data {
-  pub servers: Arc<RwLock<Vec<Server>>>,
+  pub servers: Vec<Arc<RwLock<Server>>>,
   pub ptero_client: Arc<RwLock<Client>>,
 }
 

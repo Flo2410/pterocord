@@ -16,9 +16,9 @@ pub async fn event_handler(
     FullEvent::Ready { data_about_bot, .. } => {
       println!("Logged in as {}", data_about_bot.user.name);
 
-      for server in data.servers.read().await.iter() {
+      for server_arc in data.servers.iter() {
         println!("calling init");
-        server.init(&ctx).await?;
+        server_arc.read().await.init(&ctx).await?;
       }
     }
 
@@ -30,8 +30,10 @@ pub async fn event_handler(
       let component = interaction.clone().message_component().unwrap();
       let custom_id = ServerActionButton::from_str(&component.data.custom_id)?;
 
-      let servers = data.servers.read().await;
-      let server = Server::find_by_discord_channel_id(&servers, &component.channel_id).await?;
+      let server = Server::find_by_discord_channel_id(&data.servers, &component.channel_id)
+        .await?
+        .read()
+        .await;
 
       println!(
         "Button '{}' was pressed for '{}'",

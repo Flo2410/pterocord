@@ -1,15 +1,22 @@
-use anyhow::{Ok, Result};
+use crate::server_config::ServerConfig;
+use anyhow::Result;
+use async_tungstenite::tungstenite::client::IntoClientRequest;
+use async_tungstenite::tungstenite::http::header::ORIGIN;
+use async_tungstenite::tungstenite::http::HeaderValue;
+use local_ip_address::local_ip;
+use pterodactyl_api::client::websocket::{PteroWebSocketHandle, PteroWebSocketListener, ServerStats};
 use pterodactyl_api::client::{Client, PowerSignal, ServerState};
-use serenity::all::Message;
 use serenity::all::{
   ButtonStyle, CacheHttp, ChannelId, Color, CreateActionRow, CreateButton, CreateEmbed, CreateMessage, EditChannel,
   EditMessage, GetMessages,
 };
+use serenity::all::{Http, Message};
+use serenity::async_trait;
+use std::str::FromStr;
 use std::sync::Arc;
 use strum_macros::{Display, EnumString};
 use tokio::sync::RwLock;
-
-use crate::server_config::ServerConfig;
+use url::Url;
 
 #[derive(Debug, PartialEq, EnumString, Display)]
 pub enum ServerActionButton {
@@ -24,6 +31,7 @@ pub struct Server {
   pub ptero_client: Arc<RwLock<Client>>,
 
   discord_msg: RwLock<Message>,
+  pub server_state: ServerState,
 }
 
 impl Server {
@@ -31,17 +39,19 @@ impl Server {
     Self {
       config,
       discord_msg: RwLock::new(Message::default()),
-      ptero_client: ptero_client,
+      ptero_client,
+      server_state: ServerState::Offline,
     }
   }
 
   pub async fn find_by_discord_channel_id<'a>(
-    servers: &'a Vec<Self>,
+    servers: &'a Vec<Arc<RwLock<Self>>>,
     discord_channel_id: &'a ChannelId,
-  ) -> Result<&'a Self> {
-    for server in servers.iter() {
+  ) -> Result<&'a Arc<RwLock<Self>>> {
+    for server_arc in servers.iter() {
+      let server = server_arc.read().await;
       if server.config.read().await.discord_channel_id == discord_channel_id.to_string() {
-        return Ok(server);
+        return Ok(&server_arc);
       }
     }
 
@@ -84,9 +94,18 @@ impl Server {
     let channel_name = &self.config.read().await.discord_channle_name;
     let edit_channel = self.build_channel().await?;
 
-    channel.edit(cache_http, edit_channel).await?;
+    if self.server_state == ServerState::Starting || self.server_state == ServerState::Stopping {
+      return Ok(());
+    }
 
-    println!("Updated channel {}", channel_name);
+    let a = channel.edit(cache_http.http(), edit_channel);
+    println!("Sent channel update");
+    let res = a.await;
+    if res.is_ok() {
+      println!("Updated channel {}", channel_name);
+    } else {
+      println!("Error updating channel {}", channel_name);
+    }
 
     Ok(())
   }
@@ -107,13 +126,9 @@ impl Server {
   }
 
   async fn build_channel(&self) -> Result<EditChannel> {
-    let ptero_server_lock = self.ptero_client.read().await;
-    let ptero_server = ptero_server_lock.get_server(&self.config.read().await.ptero_server_id);
-    let server_resources = ptero_server.get_resources().await?;
-
     Ok(EditChannel::new().name(format!(
       "{}-{}",
-      chose_emoji(server_resources.current_state),
+      chose_emoji(self.server_state),
       self.config.read().await.discord_channle_name
     )))
   }
@@ -123,7 +138,6 @@ impl Server {
     let ptero_server_lock = self.ptero_client.read().await;
     let ptero_server = ptero_server_lock.get_server(&self.config.read().await.ptero_server_id);
     let server_struct = ptero_server.get_details().await?;
-    let server_resources = ptero_server.get_resources().await?;
 
     let server_desc_default = server_struct.description.clone().unwrap_or_default();
     let server_desc = if server_desc_default.is_empty() {
@@ -132,21 +146,19 @@ impl Server {
       server_desc_default
     };
 
-    let server_status = server_resources.current_state;
-
     let fields = vec![
       (String::from("Description:"), server_desc, false),
-      (String::from("Status:"), format!("{:#?}", server_status), false),
+      (String::from("Status:"), format!("{:#?}", self.server_state), false),
     ];
 
     let embed = CreateEmbed::new()
       .title("Pterocord")
-      .description(format!("{} {}", chose_emoji(server_status), &server_struct.name))
+      .description(format!("{} {}", chose_emoji(self.server_state), &server_struct.name))
       .thumbnail("https://i.imgur.com/aBDbmTu.png")
-      .color(chose_color(server_status))
+      .color(chose_color(self.server_state))
       .fields(fields);
 
-    let buttons = vec![CreateActionRow::Buttons(match server_status {
+    let buttons = vec![CreateActionRow::Buttons(match self.server_state {
       ServerState::Offline => vec![CreateButton::new(ServerActionButton::Start.to_string())
         .label("Start Server")
         .style(ButtonStyle::Success)],
@@ -158,9 +170,6 @@ impl Server {
         CreateButton::new(ServerActionButton::Restart.to_string())
           .label("Restart Server")
           .style(ButtonStyle::Primary),
-        CreateButton::new(ServerActionButton::Kill.to_string())
-          .label("Kill Server")
-          .style(ButtonStyle::Danger),
       ],
 
       ServerState::Stopping => vec![CreateButton::new(ServerActionButton::Kill.to_string())
@@ -184,6 +193,40 @@ impl Server {
 
     Ok(())
   }
+
+  pub async fn start_websocket_client(&self, server_arc: Arc<RwLock<Server>>, http: Arc<Http>) {
+    let ptero_client = self.ptero_client.clone();
+    let config = self.config.clone();
+
+    // Start WebSocket client
+    tokio::spawn(async move {
+      let ptero_client = ptero_client.read().await;
+      let ptero_server = ptero_client.get_server(&config.read().await.ptero_server_id);
+      println!(
+        "Staring websocket client for server '{}'",
+        config.read().await.discord_channle_name
+      );
+      let _ = ptero_server
+        .run_websocket_loop(
+          |url| async move {
+            let local_ip = local_ip().expect("Failed to get local IP address").to_string();
+
+            // Convert the URL into a request
+            let mut request = Url::from_str(url.as_str())
+              .unwrap()
+              .into_client_request()
+              .expect("Failed to create request");
+
+            // Add the custom "Origin" header
+            request.headers_mut().insert(ORIGIN, HeaderValue::from_str(&local_ip)?);
+
+            Ok(async_tungstenite::tokio::connect_async(request).await?.0)
+          },
+          WebsocketListener { server_arc, http },
+        )
+        .await;
+    });
+  }
 }
 
 fn chose_emoji(state: ServerState) -> String {
@@ -199,5 +242,40 @@ fn chose_color(state: ServerState) -> Color {
     ServerState::Offline => Color::new(0x8b1300),
     ServerState::Running => Color::new(0x0B6623),
     _ => Color::new(0xFFCC32),
+  }
+}
+
+struct WebsocketListener {
+  server_arc: Arc<RwLock<Server>>,
+  http: Arc<Http>,
+}
+
+#[async_trait]
+impl<H: PteroWebSocketHandle> PteroWebSocketListener<H> for WebsocketListener {
+  async fn on_ready(&mut self, handle: &mut H) -> pterodactyl_api::Result<()> {
+    println!("WebSocket is ready.");
+    pterodactyl_api::Result::Ok(())
+  }
+
+  async fn on_status(&mut self, handle: &mut H, status: ServerState) -> pterodactyl_api::Result<()> {
+    println!(
+      "Received status for '{}': {:?}",
+      self.server_arc.read().await.config.read().await.discord_channle_name,
+      status
+    );
+    self.server_arc.write().await.server_state = status;
+    let _ = self.server_arc.read().await.update_msg(&self.http).await;
+
+    pterodactyl_api::Result::Ok(())
+  }
+
+  async fn on_console_output(&mut self, handle: &mut H, output: &str) -> pterodactyl_api::Result<()> {
+    // println!("Console output: {}", output);
+    pterodactyl_api::Result::Ok(())
+  }
+
+  async fn on_stats(&mut self, handle: &mut H, stats: ServerStats) -> pterodactyl_api::Result<()> {
+    // println!("Received stats: {:?}", stats);
+    pterodactyl_api::Result::Ok(())
   }
 }
